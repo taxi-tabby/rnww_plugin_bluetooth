@@ -1,0 +1,25 @@
+# Dependencies
+node_modules/
+
+# Build output
+lib/
+
+# Lock files (optional - some projects commit these)
+package-lock.json
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Build artifacts
+*.tgz
+*.log
+
+# Windows artifacts
+nul
