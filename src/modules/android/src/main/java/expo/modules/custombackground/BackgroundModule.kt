@@ -13,6 +13,8 @@ import expo.modules.kotlin.modules.ModuleDefinition
 
 class BackgroundModule : Module() {
     private val taskManager = TaskManager()
+    private var permissionPromise: Promise? = null
+    private var isWaitingForPermission = false
 
     companion object {
         private const val TAG = "BackgroundModule"
@@ -37,6 +39,17 @@ class BackgroundModule : Module() {
         OnDestroy {
             Log.d(TAG, "Background module destroyed")
             instance = null
+        }
+
+        OnActivityEntersForeground {
+            // 권한 요청 후 앱이 포그라운드로 돌아왔을 때
+            if (isWaitingForPermission && permissionPromise != null) {
+                isWaitingForPermission = false
+                android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                    resolvePermissionStatus(permissionPromise!!)
+                    permissionPromise = null
+                }, 500) // 시스템 상태 업데이트 대기
+            }
         }
 
         // 작업 등록
@@ -265,34 +278,7 @@ class BackgroundModule : Module() {
 
         // 권한 확인
         AsyncFunction("checkBackgroundPermission") { promise: Promise ->
-            try {
-                val context = appContext.reactContext ?: run {
-                    promise.resolve(mapOf(
-                        "canRunBackground" to false,
-                        "requiredPermissions" to emptyList<String>()
-                    ))
-                    return@AsyncFunction
-                }
-
-                val powerManager = context.getSystemService(Context.POWER_SERVICE) as PowerManager
-                val isIgnoringBatteryOptimizations = powerManager.isIgnoringBatteryOptimizations(context.packageName)
-
-                promise.resolve(mapOf(
-                    "canRunBackground" to true,
-                    "batteryOptimizationExempt" to isIgnoringBatteryOptimizations,
-                    "requiredPermissions" to if (!isIgnoringBatteryOptimizations) {
-                        listOf("REQUEST_IGNORE_BATTERY_OPTIMIZATIONS")
-                    } else {
-                        emptyList()
-                    }
-                ))
-            } catch (e: Exception) {
-                Log.e(TAG, "checkBackgroundPermission error", e)
-                promise.resolve(mapOf(
-                    "canRunBackground" to false,
-                    "requiredPermissions" to emptyList<String>()
-                ))
-            }
+            resolvePermissionStatus(promise)
         }
 
         // 권한 요청
@@ -307,26 +293,70 @@ class BackgroundModule : Module() {
                 }
 
                 val powerManager = context.getSystemService(Context.POWER_SERVICE) as PowerManager
-                if (!powerManager.isIgnoringBatteryOptimizations(context.packageName)) {
-                    val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
-                        data = Uri.parse("package:${context.packageName}")
-                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    }
-                    context.startActivity(intent)
+                if (powerManager.isIgnoringBatteryOptimizations(context.packageName)) {
+                    // 이미 권한이 있으면 바로 반환
+                    resolvePermissionStatus(promise)
+                    return@AsyncFunction
                 }
 
-                promise.resolve(mapOf(
-                    "canRunBackground" to true,
-                    "batteryOptimizationExempt" to powerManager.isIgnoringBatteryOptimizations(context.packageName),
-                    "requiredPermissions" to emptyList<String>()
-                ))
+                // 권한이 없으면 설정 화면 열고 포그라운드 복귀 대기
+                permissionPromise = promise
+                isWaitingForPermission = true
+
+                val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                    data = Uri.parse("package:${context.packageName}")
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                context.startActivity(intent)
+
+                // 포그라운드 복귀 시 OnActivityEntersForeground에서 처리됨
             } catch (e: Exception) {
                 Log.e(TAG, "requestBackgroundPermission error", e)
+                isWaitingForPermission = false
+                permissionPromise = null
                 promise.resolve(mapOf(
                     "canRunBackground" to false,
                     "requiredPermissions" to emptyList<String>()
                 ))
             }
+        }
+    }
+
+    private fun resolvePermissionStatus(promise: Promise) {
+        try {
+            val context = appContext.reactContext ?: run {
+                promise.resolve(mapOf(
+                    "canRunBackground" to false,
+                    "requiredPermissions" to emptyList<String>()
+                ))
+                return
+            }
+
+            val powerManager = context.getSystemService(Context.POWER_SERVICE) as PowerManager
+            val isIgnoringBatteryOptimizations = powerManager.isIgnoringBatteryOptimizations(context.packageName)
+
+            val deniedPermissions = if (!isIgnoringBatteryOptimizations) {
+                listOf("REQUEST_IGNORE_BATTERY_OPTIMIZATIONS")
+            } else {
+                emptyList()
+            }
+
+            promise.resolve(mapOf(
+                "canRunBackground" to true,
+                "batteryOptimizationExempt" to isIgnoringBatteryOptimizations,
+                "requiredPermissions" to if (!isIgnoringBatteryOptimizations) {
+                    listOf("REQUEST_IGNORE_BATTERY_OPTIMIZATIONS")
+                } else {
+                    emptyList()
+                },
+                "deniedPermissions" to deniedPermissions
+            ))
+        } catch (e: Exception) {
+            Log.e(TAG, "resolvePermissionStatus error", e)
+            promise.resolve(mapOf(
+                "canRunBackground" to false,
+                "requiredPermissions" to emptyList<String>()
+            ))
         }
     }
 

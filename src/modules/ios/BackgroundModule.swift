@@ -5,6 +5,8 @@ import BackgroundTasks
 public class BackgroundModule: Module {
     private var taskManager = TaskManager()
     private var headlessWebViewManager: HeadlessWebViewManager?
+    private var permissionPromise: Promise?
+    private var foregroundObserver: NSObjectProtocol?
 
     public func definition() -> ModuleDefinition {
         Name("CustomBackground")
@@ -151,29 +153,67 @@ public class BackgroundModule: Module {
 
         // 권한 확인
         AsyncFunction("checkBackgroundPermission") { (promise: Promise) in
-            let status = UIApplication.shared.backgroundRefreshStatus
-            let canRun = status == .available
-
-            promise.resolve([
-                "canRunBackground": canRun,
-                "requiredPermissions": canRun ? [] : ["Background App Refresh"]
-            ])
+            self.resolvePermissionStatus(promise: promise)
         }
 
         // 권한 요청
         AsyncFunction("requestBackgroundPermission") { (promise: Promise) in
+            // 기존 observer 정리
+            if let observer = self.foregroundObserver {
+                NotificationCenter.default.removeObserver(observer)
+                self.foregroundObserver = nil
+            }
+
             // iOS에서는 직접 권한 요청 불가, 설정으로 안내
-            if let url = URL(string: UIApplication.openSettingsURLString) {
-                DispatchQueue.main.async {
-                    UIApplication.shared.open(url)
+            guard let url = URL(string: UIApplication.openSettingsURLString) else {
+                self.resolvePermissionStatus(promise: promise)
+                return
+            }
+
+            // 앱이 포그라운드로 돌아올 때 상태 확인
+            self.foregroundObserver = NotificationCenter.default.addObserver(
+                forName: UIApplication.willEnterForegroundNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                // observer 제거
+                if let observer = self?.foregroundObserver {
+                    NotificationCenter.default.removeObserver(observer)
+                    self?.foregroundObserver = nil
+                }
+
+                // 약간의 딜레이 후 상태 확인 (시스템 상태 업데이트 대기)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    self?.resolvePermissionStatus(promise: promise)
                 }
             }
 
-            promise.resolve([
-                "canRunBackground": UIApplication.shared.backgroundRefreshStatus == .available,
-                "requiredPermissions": []
-            ])
+            // 설정 앱 열기
+            DispatchQueue.main.async {
+                UIApplication.shared.open(url)
+            }
         }
+    }
+
+    private func resolvePermissionStatus(promise: Promise) {
+        let status = UIApplication.shared.backgroundRefreshStatus
+        let canRun = status == .available
+        let isDenied = status == .denied
+        let isRestricted = status == .restricted
+
+        var deniedPermissions: [String] = []
+        if isDenied {
+            deniedPermissions.append("Background App Refresh (Denied)")
+        }
+        if isRestricted {
+            deniedPermissions.append("Background App Refresh (Restricted)")
+        }
+
+        promise.resolve([
+            "canRunBackground": canRun,
+            "requiredPermissions": canRun ? [] : ["Background App Refresh"],
+            "deniedPermissions": deniedPermissions
+        ])
     }
 
     private func registerBackgroundTasks() {
