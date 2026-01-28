@@ -171,6 +171,7 @@ export type BackgroundError =
   | 'PERMISSION_DENIED'
   | 'SYSTEM_RESTRICTED'
   | 'WEBVIEW_INIT_FAILED'
+  | 'INVALID_INPUT'
   | 'UNKNOWN';
 
 // ============================================================================
