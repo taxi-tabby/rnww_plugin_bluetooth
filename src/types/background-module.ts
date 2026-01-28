@@ -6,14 +6,23 @@
 // Callback Types
 // ============================================================================
 
-/** 전방 선언 */
+/**
+ * 작업 이벤트
+ */
 export interface TaskEvent {
+  /** 작업 ID */
   taskId: string;
+  /** 등록 시 지정한 콜백 ID */
   callbackId?: string;
+  /** 이벤트 타입 */
   type: 'started' | 'stopped' | 'restart' | 'error' | 'trigger' | 'action';
+  /** 트리거 종류 (type이 'trigger'일 때) */
   trigger?: 'interval' | 'network_change' | 'location_change' | 'time_trigger';
+  /** 알림 액션 버튼 ID (type이 'action'일 때) */
   actionId?: string;
+  /** 에러 메시지 (type이 'error'일 때) */
   error?: string;
+  /** 타임스탬프 */
   timestamp: number;
 }
 

@@ -48,25 +48,25 @@ export const registerBackgroundHandlers = (config: BackgroundBridgeConfig) => {
   /**
    * 이벤트 핸들러 - 콜백 실행 및 Web 전달
    */
-  const handleTaskEvent = async (event: TaskEvent): Promise<void> => {
+  const handleTaskEvent = (event: TaskEvent): void => {
     // callbackId 추가
     const enrichedEvent: TaskEvent = {
       ...event,
       callbackId: callbackIdMap.get(event.taskId),
     };
 
-    // 등록된 콜백 실행
+    // Web으로 이벤트 전달 (먼저, non-blocking)
+    bridge.sendToWeb('onTaskEvent', enrichedEvent);
+
+    // 등록된 콜백 실행 (비동기, non-blocking)
     const callback = callbackMap.get(event.taskId);
     if (callback) {
-      try {
-        await callback(enrichedEvent);
-      } catch (error) {
-        logger.error('[Bridge] Callback execution error:', error);
-      }
+      Promise.resolve()
+        .then(() => callback(enrichedEvent))
+        .catch((error) => {
+          logger.error('[Bridge] Callback execution error:', error);
+        });
     }
-
-    // Web으로도 이벤트 전달
-    bridge.sendToWeb('onTaskEvent', enrichedEvent);
   };
 
   /**
@@ -82,20 +82,21 @@ export const registerBackgroundHandlers = (config: BackgroundBridgeConfig) => {
   bridge.registerHandler('registerTask', async (payload: any, respond: any) => {
     try {
       const task = payload as BackgroundTask;
-
-      // callbackId 저장
-      if (task.callbackId) {
-        callbackIdMap.set(task.taskId, task.callbackId);
-      }
-
-      // callback 함수 저장
-      if (task.callback) {
-        callbackMap.set(task.taskId, task.callback);
-      }
-
-      // 네이티브 모듈에는 callback 제외하고 전달
       const { callback, ...taskWithoutCallback } = task;
+
+      // 네이티브 모듈에 등록 (callback 제외)
       const result = await Background.registerTask(taskWithoutCallback);
+
+      // 등록 성공 시에만 콜백 저장
+      if (result.success) {
+        if (task.callbackId) {
+          callbackIdMap.set(task.taskId, task.callbackId);
+        }
+        if (callback) {
+          callbackMap.set(task.taskId, callback);
+        }
+      }
+
       respond(result);
     } catch (error) {
       respond({
