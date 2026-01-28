@@ -1,0 +1,43 @@
+{
+  "name": "rnww-plugin-background",
+  "version": "1.0.0",
+  "description": "React Native WebView Background Execution Plugin with Expo support",
+  "main": "lib/bridge/index.js",
+  "types": "lib/bridge/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "prepare": "npm run build",
+    "clean": "rimraf lib"
+  },
+  "keywords": [
+    "react-native",
+    "expo",
+    "background",
+    "foreground-service",
+    "headless",
+    "webview",
+    "bridge",
+    "expo-module"
+  ],
+  "author": "",
+  "license": "MIT",
+  "files": [
+    "lib/",
+    "src/modules/expo-module.config.json",
+    "src/modules/index.ts",
+    "src/modules/android/build.gradle",
+    "src/modules/android/src/",
+    "src/modules/ios/",
+    "README.md"
+  ],
+  "peerDependencies": {
+    "expo": "*",
+    "expo-modules-core": "*"
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.0",
+    "@types/react-native": "^0.73.0",
+    "rimraf": "^5.0.10",
+    "typescript": "^5.9.3"
+  }
+}
