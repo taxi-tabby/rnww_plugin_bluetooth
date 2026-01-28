@@ -8,8 +8,10 @@ import * as Background from '../modules';
 import type {
   BackgroundTask,
   NotificationConfig,
+  NotificationAction,
   TaskEvent,
   TaskCallback,
+  ActionCallback,
 } from '../types/background-module';
 
 // ============================================================================
@@ -34,6 +36,13 @@ export interface BackgroundBridgeConfig {
  */
 interface EventSubscription {
   remove: () => void;
+}
+
+/**
+ * 액션 콜백 키 생성
+ */
+function actionCallbackKey(taskId: string, actionId: string): string {
+  return `${taskId}:${actionId}`;
 }
 
 // ============================================================================
@@ -80,9 +89,13 @@ function isValidHexColor(color: unknown): boolean {
 }
 
 /**
- * NotificationConfig 정규화 (보안 및 제한 적용)
+ * NotificationConfig에서 콜백 함수 추출 및 정규화
  */
-function sanitizeNotificationConfig(config: NotificationConfig): NotificationConfig {
+function extractAndSanitizeNotification(
+  config: NotificationConfig,
+  taskId: string,
+  actionCallbackMap: Map<string, ActionCallback>
+): NotificationConfig {
   const sanitized = { ...config };
 
   // color 검증
@@ -90,9 +103,22 @@ function sanitizeNotificationConfig(config: NotificationConfig): NotificationCon
     delete sanitized.color;
   }
 
-  // actions 최대 3개 제한
-  if (sanitized.actions && sanitized.actions.length > 3) {
-    sanitized.actions = sanitized.actions.slice(0, 3);
+  // actions 처리
+  if (sanitized.actions && sanitized.actions.length > 0) {
+    // 최대 3개 제한
+    const limitedActions = sanitized.actions.slice(0, 3);
+
+    // 각 액션에서 onPress 콜백 추출 및 저장
+    sanitized.actions = limitedActions.map((action) => {
+      if (action.onPress && typeof action.onPress === 'function') {
+        // 콜백 저장
+        actionCallbackMap.set(actionCallbackKey(taskId, action.id), action.onPress);
+      }
+
+      // 네이티브에 전달할 때는 onPress 제외
+      const { onPress, ...actionWithoutCallback } = action;
+      return actionWithoutCallback as NotificationAction;
+    });
   }
 
   // progress 값 검증
@@ -102,7 +128,6 @@ function sanitizeNotificationConfig(config: NotificationConfig): NotificationCon
       current: Math.max(0, sanitized.progress.current),
       max: Math.max(1, sanitized.progress.max),
     };
-    // current가 max를 초과하지 않도록
     if (sanitized.progress.current > sanitized.progress.max) {
       sanitized.progress.current = sanitized.progress.max;
     }
@@ -143,8 +168,11 @@ export const registerBackgroundHandlers = (config: BackgroundBridgeConfig): void
   // 작업별 콜백 ID 매핑 (taskId → callbackId)
   const callbackIdMap = new Map<string, string>();
 
-  // 콜백 함수 저장소 (taskId → callback)
-  const callbackMap = new Map<string, TaskCallback>();
+  // 작업 콜백 함수 저장소 (taskId → callback)
+  const taskCallbackMap = new Map<string, TaskCallback>();
+
+  // 액션 콜백 함수 저장소 (taskId:actionId → callback)
+  const actionCallbackMap = new Map<string, ActionCallback>();
 
   /**
    * 이벤트 핸들러 - 콜백 실행 및 Web 전달
@@ -162,20 +190,35 @@ export const registerBackgroundHandlers = (config: BackgroundBridgeConfig): void
       callbackId: callbackIdMap.get(event.taskId),
     };
 
-    // Web으로 이벤트 전달 (먼저, non-blocking)
+    // 액션 이벤트인 경우 액션 콜백 우선 실행
+    if (event.type === 'action' && event.actionId) {
+      const actionCallback = actionCallbackMap.get(
+        actionCallbackKey(event.taskId, event.actionId)
+      );
+
+      if (actionCallback) {
+        Promise.resolve()
+          .then(() => actionCallback(event.actionId!, event.taskId))
+          .catch((error) => {
+            logger.error('[Bridge] Action callback error:', error);
+          });
+      }
+    }
+
+    // Web으로 이벤트 전달 (non-blocking)
     try {
       bridge.sendToWeb('onTaskEvent', enrichedEvent);
     } catch (error) {
       logger.error('[Bridge] Failed to send event to web:', error);
     }
 
-    // 등록된 콜백 실행 (비동기, non-blocking)
-    const callback = callbackMap.get(event.taskId);
-    if (callback) {
+    // 작업 콜백 실행 (비동기, non-blocking)
+    const taskCallback = taskCallbackMap.get(event.taskId);
+    if (taskCallback) {
       Promise.resolve()
-        .then(() => callback(enrichedEvent))
+        .then(() => taskCallback(enrichedEvent))
         .catch((error) => {
-          logger.error('[Bridge] Callback execution error:', error);
+          logger.error('[Bridge] Task callback error:', error);
         });
     }
   };
@@ -187,6 +230,19 @@ export const registerBackgroundHandlers = (config: BackgroundBridgeConfig): void
     if (!eventSubscription) {
       eventSubscription = Background.addTaskEventListener(handleTaskEvent);
     }
+  };
+
+  /**
+   * 특정 작업의 액션 콜백 정리
+   */
+  const clearActionCallbacks = (taskId: string): void => {
+    const keysToDelete: string[] = [];
+    actionCallbackMap.forEach((_, key) => {
+      if (key.startsWith(`${taskId}:`)) {
+        keysToDelete.push(key);
+      }
+    });
+    keysToDelete.forEach((key) => actionCallbackMap.delete(key));
   };
 
   // ============================================================================
@@ -209,10 +265,14 @@ export const registerBackgroundHandlers = (config: BackgroundBridgeConfig): void
       const task = payload as BackgroundTask;
       const { callback, notification, ...taskConfig } = task;
 
-      // notification 정규화
+      // notification 정규화 및 액션 콜백 추출
+      const sanitizedNotification = notification
+        ? extractAndSanitizeNotification(notification, task.taskId, actionCallbackMap)
+        : undefined;
+
       const sanitizedTask = {
         ...taskConfig,
-        ...(notification && { notification: sanitizeNotificationConfig(notification) }),
+        ...(sanitizedNotification && { notification: sanitizedNotification }),
       };
 
       // 네이티브 모듈에 등록
@@ -224,8 +284,11 @@ export const registerBackgroundHandlers = (config: BackgroundBridgeConfig): void
           callbackIdMap.set(task.taskId, task.callbackId);
         }
         if (callback && typeof callback === 'function') {
-          callbackMap.set(task.taskId, callback);
+          taskCallbackMap.set(task.taskId, callback);
         }
+      } else {
+        // 실패 시 저장된 액션 콜백 정리
+        clearActionCallbacks(task.taskId);
       }
 
       respond(result);
@@ -255,9 +318,10 @@ export const registerBackgroundHandlers = (config: BackgroundBridgeConfig): void
         return;
       }
 
-      // 매핑 제거 (네이티브 호출 전에 제거 - 실패해도 정리)
+      // 모든 콜백 정리
       callbackIdMap.delete(taskId);
-      callbackMap.delete(taskId);
+      taskCallbackMap.delete(taskId);
+      clearActionCallbacks(taskId);
 
       const result = await Background.unregisterTask(taskId);
       respond(result);
@@ -340,9 +404,10 @@ export const registerBackgroundHandlers = (config: BackgroundBridgeConfig): void
         eventSubscription = null;
       }
 
-      // 모든 매핑 제거
+      // 모든 콜백 정리
       callbackIdMap.clear();
-      callbackMap.clear();
+      taskCallbackMap.clear();
+      actionCallbackMap.clear();
 
       respond(result);
     } catch (error) {
@@ -355,7 +420,7 @@ export const registerBackgroundHandlers = (config: BackgroundBridgeConfig): void
     }
   });
 
-  // 알림 업데이트
+  // 알림 업데이트 (액션 콜백 지원)
   bridge.registerHandler('updateNotification', async (payload: unknown, respond: (data: unknown) => void) => {
     try {
       // 입력 검증
@@ -367,7 +432,15 @@ export const registerBackgroundHandlers = (config: BackgroundBridgeConfig): void
         return;
       }
 
-      const sanitizedConfig = sanitizeNotificationConfig(payload);
+      const config = payload as NotificationConfig;
+      const taskId = config.taskId || 'default';
+
+      // 기존 액션 콜백 정리 후 새로 등록
+      if (config.actions) {
+        clearActionCallbacks(taskId);
+      }
+
+      const sanitizedConfig = extractAndSanitizeNotification(config, taskId, actionCallbackMap);
       const result = await Background.updateNotification(sanitizedConfig);
       respond(result);
     } catch (error) {
@@ -456,9 +529,10 @@ export const registerBackgroundHandlers = (config: BackgroundBridgeConfig): void
         eventSubscription = null;
       }
 
-      // 모든 매핑 제거
+      // 모든 콜백 정리
       callbackIdMap.clear();
-      callbackMap.clear();
+      taskCallbackMap.clear();
+      actionCallbackMap.clear();
 
       // 재등록 가능하도록 플래그 리셋
       isRegistered = false;
