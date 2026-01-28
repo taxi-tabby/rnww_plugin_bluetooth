@@ -5,7 +5,12 @@
 
 import type { IBridge, IPlatform } from '../types';
 import * as Background from '../modules';
-import type { BackgroundTask, NotificationConfig } from '../types/background-module';
+import type {
+  BackgroundTask,
+  NotificationConfig,
+  TaskEvent,
+  TaskCallback,
+} from '../types/background-module';
 
 /**
  * Background 브릿지 설정
@@ -34,11 +39,63 @@ export const registerBackgroundHandlers = (config: BackgroundBridgeConfig) => {
   // 이벤트 리스너 구독 객체
   let eventSubscription: any = null;
 
+  // 작업별 콜백 ID 매핑 (taskId → callbackId)
+  const callbackIdMap = new Map<string, string>();
+
+  // 콜백 함수 저장소 (taskId → callback)
+  const callbackMap = new Map<string, TaskCallback>();
+
+  /**
+   * 이벤트 핸들러 - 콜백 실행 및 Web 전달
+   */
+  const handleTaskEvent = async (event: TaskEvent): Promise<void> => {
+    // callbackId 추가
+    const enrichedEvent: TaskEvent = {
+      ...event,
+      callbackId: callbackIdMap.get(event.taskId),
+    };
+
+    // 등록된 콜백 실행
+    const callback = callbackMap.get(event.taskId);
+    if (callback) {
+      try {
+        await callback(enrichedEvent);
+      } catch (error) {
+        logger.error('[Bridge] Callback execution error:', error);
+      }
+    }
+
+    // Web으로도 이벤트 전달
+    bridge.sendToWeb('onTaskEvent', enrichedEvent);
+  };
+
+  /**
+   * 이벤트 리스너 초기화
+   */
+  const ensureEventListener = (): void => {
+    if (!eventSubscription) {
+      eventSubscription = Background.addTaskEventListener(handleTaskEvent);
+    }
+  };
+
   // 작업 등록
   bridge.registerHandler('registerTask', async (payload: any, respond: any) => {
     try {
       const task = payload as BackgroundTask;
-      const result = await Background.registerTask(task);
+
+      // callbackId 저장
+      if (task.callbackId) {
+        callbackIdMap.set(task.taskId, task.callbackId);
+      }
+
+      // callback 함수 저장
+      if (task.callback) {
+        callbackMap.set(task.taskId, task.callback);
+      }
+
+      // 네이티브 모듈에는 callback 제외하고 전달
+      const { callback, ...taskWithoutCallback } = task;
+      const result = await Background.registerTask(taskWithoutCallback);
       respond(result);
     } catch (error) {
       respond({
@@ -52,6 +109,11 @@ export const registerBackgroundHandlers = (config: BackgroundBridgeConfig) => {
   bridge.registerHandler('unregisterTask', async (payload: any, respond: any) => {
     try {
       const { taskId } = payload as { taskId: string };
+
+      // 매핑 제거
+      callbackIdMap.delete(taskId);
+      callbackMap.delete(taskId);
+
       const result = await Background.unregisterTask(taskId);
       respond(result);
     } catch (error) {
@@ -67,12 +129,7 @@ export const registerBackgroundHandlers = (config: BackgroundBridgeConfig) => {
     try {
       const { taskId } = payload as { taskId: string };
 
-      // 이벤트 리스너 등록 (최초 시작 시)
-      if (!eventSubscription) {
-        eventSubscription = Background.addTaskEventListener((event: any) => {
-          bridge.sendToWeb('onTaskEvent', event);
-        });
-      }
+      ensureEventListener();
 
       const result = await Background.startTask(taskId);
       respond(result);
@@ -109,6 +166,10 @@ export const registerBackgroundHandlers = (config: BackgroundBridgeConfig) => {
         eventSubscription = null;
       }
 
+      // 모든 매핑 제거
+      callbackIdMap.clear();
+      callbackMap.clear();
+
       respond(result);
     } catch (error) {
       respond({
@@ -121,8 +182,8 @@ export const registerBackgroundHandlers = (config: BackgroundBridgeConfig) => {
   // 알림 업데이트
   bridge.registerHandler('updateNotification', async (payload: any, respond: any) => {
     try {
-      const config = payload as NotificationConfig;
-      const result = await Background.updateNotification(config);
+      const notificationConfig = payload as NotificationConfig;
+      const result = await Background.updateNotification(notificationConfig);
       respond(result);
     } catch (error) {
       respond({

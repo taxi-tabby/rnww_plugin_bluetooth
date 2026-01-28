@@ -3,6 +3,26 @@
  */
 
 // ============================================================================
+// Callback Types
+// ============================================================================
+
+/** 전방 선언 */
+export interface TaskEvent {
+  taskId: string;
+  callbackId?: string;
+  type: 'started' | 'stopped' | 'restart' | 'error' | 'trigger' | 'action';
+  trigger?: 'interval' | 'network_change' | 'location_change' | 'time_trigger';
+  actionId?: string;
+  error?: string;
+  timestamp: number;
+}
+
+/**
+ * 작업 이벤트 콜백 함수 타입
+ */
+export type TaskCallback = (event: TaskEvent) => void | Promise<void>;
+
+// ============================================================================
 // Task Types
 // ============================================================================
 
@@ -20,6 +40,36 @@ export interface BackgroundTask {
   triggers?: Array<'network_change' | 'location_change' | 'time_trigger'>;
   /** 예약 시간 (time_trigger 사용 시) */
   scheduledTime?: number;
+  /** 콜백 식별자 (이벤트 라우팅용) */
+  callbackId?: string;
+  /** 초기 알림 설정 */
+  notification?: NotificationConfig;
+  /** 이벤트 발생 시 실행할 콜백 함수 */
+  callback?: TaskCallback;
+}
+
+/**
+ * 알림 액션 버튼
+ */
+export interface NotificationAction {
+  /** 액션 식별자 */
+  id: string;
+  /** 버튼 텍스트 */
+  title: string;
+  /** 버튼 아이콘 (Android) */
+  icon?: string;
+}
+
+/**
+ * 알림 진행 상태바
+ */
+export interface NotificationProgress {
+  /** 현재 값 */
+  current: number;
+  /** 최대 값 */
+  max: number;
+  /** 무한 진행 표시 여부 */
+  indeterminate?: boolean;
 }
 
 /**
@@ -34,6 +84,28 @@ export interface NotificationConfig {
   body: string;
   /** 아이콘 (Android) */
   icon?: string;
+
+  // 스타일/색상 옵션
+  /** 아이콘/강조 색상 (hex) */
+  color?: string;
+  /** 알림 우선순위 */
+  priority?: 'min' | 'low' | 'default' | 'high' | 'max';
+  /** 지속 알림 여부 (dismiss 불가) */
+  ongoing?: boolean;
+
+  // 진행 상태바
+  /** 진행 상태바 설정 */
+  progress?: NotificationProgress;
+
+  // 액션 버튼 (최대 3개)
+  /** 알림 액션 버튼 목록 */
+  actions?: NotificationAction[];
+
+  // 채널 설정 (Android)
+  /** 알림 채널 ID */
+  channelId?: string;
+  /** 알림 채널 이름 */
+  channelName?: string;
 }
 
 /**
@@ -58,26 +130,6 @@ export interface BackgroundStatus {
   tasks: TaskStatus[];
   /** 전체 실행 중 여부 */
   isAnyRunning: boolean;
-}
-
-// ============================================================================
-// Event Types
-// ============================================================================
-
-/**
- * 작업 이벤트
- */
-export interface TaskEvent {
-  /** 작업 ID */
-  taskId: string;
-  /** 이벤트 타입 */
-  type: 'started' | 'stopped' | 'restart' | 'error' | 'trigger';
-  /** 트리거 종류 (type이 'trigger'일 때) */
-  trigger?: 'interval' | 'network_change' | 'location_change' | 'time_trigger';
-  /** 에러 메시지 (type이 'error'일 때) */
-  error?: string;
-  /** 타임스탬프 */
-  timestamp: number;
 }
 
 // ============================================================================
