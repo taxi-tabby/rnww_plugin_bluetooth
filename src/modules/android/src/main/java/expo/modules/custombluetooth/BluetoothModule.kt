@@ -377,6 +377,7 @@ class BluetoothModule : Module() {
             .setScanMode(scanMode)
 
         val filters = mutableListOf<ScanFilter>()
+        @Suppress("UNCHECKED_CAST")
         val serviceUUIDs = options["serviceUUIDs"] as? List<String>
         serviceUUIDs?.forEach { uuid ->
             try {
@@ -676,23 +677,37 @@ class BluetoothModule : Module() {
             }
         }
 
-        override fun onCharacteristicRead(gatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic, status: Int) {
+        // For API 33+
+        override fun onCharacteristicRead(gatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic, value: ByteArray, status: Int) {
             if (status == BluetoothGatt.GATT_SUCCESS) {
-                sendEvent("onBluetoothEvent", mapOf(
-                    "type" to "characteristicRead",
-                    "deviceId" to gatt.device.address,
-                    "data" to mapOf(
-                        "result" to mapOf(
-                            "deviceId" to gatt.device.address,
-                            "serviceUuid" to characteristic.service.uuid.toString(),
-                            "characteristicUuid" to characteristic.uuid.toString(),
-                            "value" to Base64.encodeToString(characteristic.value ?: ByteArray(0), Base64.NO_WRAP),
-                            "timestamp" to System.currentTimeMillis()
-                        )
-                    ),
-                    "timestamp" to System.currentTimeMillis()
-                ))
+                sendCharacteristicReadEvent(gatt, characteristic, value)
             }
+        }
+
+        // For API < 33
+        @Suppress("DEPRECATION")
+        @Deprecated("Deprecated in API 33", ReplaceWith("onCharacteristicRead(gatt, characteristic, value, status)"))
+        override fun onCharacteristicRead(gatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic, status: Int) {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU && status == BluetoothGatt.GATT_SUCCESS) {
+                sendCharacteristicReadEvent(gatt, characteristic, characteristic.value ?: ByteArray(0))
+            }
+        }
+
+        private fun sendCharacteristicReadEvent(gatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic, value: ByteArray) {
+            sendEvent("onBluetoothEvent", mapOf(
+                "type" to "characteristicRead",
+                "deviceId" to gatt.device.address,
+                "data" to mapOf(
+                    "result" to mapOf(
+                        "deviceId" to gatt.device.address,
+                        "serviceUuid" to characteristic.service.uuid.toString(),
+                        "characteristicUuid" to characteristic.uuid.toString(),
+                        "value" to Base64.encodeToString(value, Base64.NO_WRAP),
+                        "timestamp" to System.currentTimeMillis()
+                    )
+                ),
+                "timestamp" to System.currentTimeMillis()
+            ))
         }
 
         override fun onCharacteristicWrite(gatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic, status: Int) {
@@ -708,7 +723,21 @@ class BluetoothModule : Module() {
             ))
         }
 
+        // For API 33+
+        override fun onCharacteristicChanged(gatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic, value: ByteArray) {
+            sendCharacteristicChangedEvent(gatt, characteristic, value)
+        }
+
+        // For API < 33
+        @Suppress("DEPRECATION")
+        @Deprecated("Deprecated in API 33", ReplaceWith("onCharacteristicChanged(gatt, characteristic, value)"))
         override fun onCharacteristicChanged(gatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic) {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+                sendCharacteristicChangedEvent(gatt, characteristic, characteristic.value ?: ByteArray(0))
+            }
+        }
+
+        private fun sendCharacteristicChangedEvent(gatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic, value: ByteArray) {
             sendEvent("onBluetoothEvent", mapOf(
                 "type" to "notification",
                 "deviceId" to gatt.device.address,
@@ -717,7 +746,7 @@ class BluetoothModule : Module() {
                         "deviceId" to gatt.device.address,
                         "serviceUuid" to characteristic.service.uuid.toString(),
                         "characteristicUuid" to characteristic.uuid.toString(),
-                        "value" to Base64.encodeToString(characteristic.value ?: ByteArray(0), Base64.NO_WRAP),
+                        "value" to Base64.encodeToString(value, Base64.NO_WRAP),
                         "timestamp" to System.currentTimeMillis()
                     )
                 ),
@@ -1006,9 +1035,15 @@ class BluetoothModule : Module() {
 
         return try {
             val data = Base64.decode(value, Base64.DEFAULT)
-            characteristic.value = data
-            characteristic.writeType = writeType
-            val started = gatt.writeCharacteristic(characteristic)
+            val started = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                gatt.writeCharacteristic(characteristic, data, writeType) == BluetoothGatt.GATT_SUCCESS
+            } else {
+                @Suppress("DEPRECATION")
+                characteristic.value = data
+                characteristic.writeType = writeType
+                @Suppress("DEPRECATION")
+                gatt.writeCharacteristic(characteristic)
+            }
             if (started) {
                 mapOf("success" to true)
             } else {
@@ -1041,12 +1076,19 @@ class BluetoothModule : Module() {
 
             val descriptor = characteristic.getDescriptor(CCCD_UUID)
             if (descriptor != null) {
-                descriptor.value = if (enable) {
+                val value = if (enable) {
                     BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
                 } else {
                     BluetoothGattDescriptor.DISABLE_NOTIFICATION_VALUE
                 }
-                gatt.writeDescriptor(descriptor)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    gatt.writeDescriptor(descriptor, value)
+                } else {
+                    @Suppress("DEPRECATION")
+                    descriptor.value = value
+                    @Suppress("DEPRECATION")
+                    gatt.writeDescriptor(descriptor)
+                }
             }
 
             mapOf("success" to true)
