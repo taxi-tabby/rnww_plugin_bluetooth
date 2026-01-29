@@ -1,7 +1,7 @@
 /**
- * 타입 정의 모음
+ * Types 모듈 엔트리 포인트
  */
 
-export * from './platform';
-export * from './bridge';
-export * from './background-module';
+export type { IBridge } from './bridge';
+export type { IPlatform } from './platform';
+export * from './bluetooth-module';

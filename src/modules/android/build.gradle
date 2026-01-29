@@ -2,7 +2,7 @@ apply plugin: 'com.android.library'
 apply plugin: 'kotlin-android'
 apply plugin: 'maven-publish'
 
-group = 'expo.modules.custombackground'
+group = 'expo.modules.custombluetooth'
 version = '1.0.0'
 
 buildscript {
@@ -32,7 +32,7 @@ afterEvaluate {
 }
 
 android {
-  namespace "expo.modules.custombackground"
+  namespace "expo.modules.custombluetooth"
   compileSdkVersion safeExtGet("compileSdkVersion", 34)
 
   defaultConfig {
@@ -58,11 +58,8 @@ dependencies {
   implementation project(':expo-modules-core')
   implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk8:$kotlinVersion"
 
-  // WorkManager for background task scheduling
-  implementation 'androidx.work:work-runtime-ktx:2.9.0'
-
-  // WebView
-  implementation 'androidx.webkit:webkit:1.8.0'
+  // Coroutines
+  implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3'
 }
 
 def safeExtGet(prop, fallback) {

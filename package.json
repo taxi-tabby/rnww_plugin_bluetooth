@@ -1,7 +1,7 @@
 {
-  "name": "rnww-plugin-background",
-  "version": "1.1.2",
-  "description": "React Native WebView Background Execution Plugin with Expo support",
+  "name": "rnww-plugin-bluetooth",
+  "version": "1.0.0",
+  "description": "React Native WebView Bluetooth Plugin with Expo support - BLE and Classic Bluetooth communication",
   "main": "lib/bridge/index.js",
   "types": "lib/bridge/index.d.ts",
   "scripts": {
@@ -12,9 +12,10 @@
   "keywords": [
     "react-native",
     "expo",
-    "background",
-    "foreground-service",
-    "headless",
+    "bluetooth",
+    "ble",
+    "bluetooth-low-energy",
+    "bluetooth-classic",
     "webview",
     "bridge",
     "expo-module"

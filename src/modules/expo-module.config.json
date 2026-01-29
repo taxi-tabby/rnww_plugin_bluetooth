@@ -1,9 +1,9 @@
 {
   "platforms": ["android", "ios"],
   "android": {
-    "modules": ["expo.modules.custombackground.BackgroundModule"]
+    "modules": ["expo.modules.custombluetooth.BluetoothModule"]
   },
   "ios": {
-    "modules": ["BackgroundModule"]
+    "modules": ["BluetoothModule"]
   }
 }

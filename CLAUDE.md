@@ -4,7 +4,7 @@ This file provides guidance to Claude Code when working with this repository.
 
 ## Project Overview
 
-This is `rnww-plugin-background`, an Expo native module that enables background execution for React Native WebView applications. It maintains Headless WebView instances to preserve connections (WebSocket, HTTP) when the app is backgrounded or terminated.
+This is `rnww-plugin-bluetooth`, an Expo native module that enables Bluetooth communication (BLE and Classic) for React Native WebView applications. It provides a bridge between WebView and native Bluetooth APIs.
 
 ## Build Commands
 
@@ -19,27 +19,57 @@ npm run prepare    # Build before publish
 ### Three-Layer Structure
 
 1. **Bridge Layer** (`src/bridge/`) - WebView communication handlers
-   - `registerBackgroundHandlers(config)` accepts `IBridge` and `IPlatform`
+   - `registerBluetoothHandlers(config)` accepts `IBridge` and `IPlatform`
 
 2. **Module Wrapper** (`src/modules/index.ts`) - Cross-platform TypeScript API
-   - Lazy-loads native module via `requireNativeModule('CustomBackground')`
+   - Lazy-loads native module via `requireNativeModule('CustomBluetooth')`
 
 3. **Native Modules** (`src/modules/android/`, `src/modules/ios/`)
-   - Android: Kotlin with ForegroundService + WorkManager
-   - iOS: Swift with BGTaskScheduler + WKWebView
+   - Android: Kotlin with BLE and Classic Bluetooth support
+   - iOS: Swift with CoreBluetooth (BLE only)
 
 ### Key Features
 
-- **Two execution modes:** persistent (always-on) and efficient (system-managed)
-- **Multiple tasks:** Manage concurrent background tasks with unique taskIds
-- **Dynamic notifications:** Update notification content in real-time
-- **Event-driven:** Interval and event-based triggers
+- **BLE Support:** Scan, connect, read/write characteristics, notifications
+- **Classic Bluetooth:** Android-only SPP communication
+- **Cross-platform:** Unified API with platform-specific implementations
+- **Event-driven:** Real-time device discovery and data events
 
 ### Bridge Handlers
 
-- `registerTask`, `unregisterTask`
-- `startTask`, `stopTask`, `stopAllTasks`
-- `updateNotification`
-- `getTaskStatus`, `getAllTasksStatus`
-- `checkBackgroundPermission`, `requestBackgroundPermission`
-- `onTaskEvent` (event callback)
+**State & Permissions:**
+- `getBluetoothState`, `checkBluetoothPermissions`, `requestBluetoothPermissions`
+- `requestEnableBluetooth` (Android only)
+
+**Scanning:**
+- `startBleScan`, `stopBleScan`, `isScanning`
+- `startClassicScan`, `stopClassicScan` (Android only)
+- `getBondedDevices` (Android only)
+
+**Connection:**
+- `connectBle`, `connectClassic` (Android only)
+- `disconnect`, `disconnectAll`
+- `isConnected`, `getConnectedDevices`
+
+**GATT Operations:**
+- `discoverServices`, `readCharacteristic`, `writeCharacteristic`
+- `setNotification`, `requestMtu`
+
+**Classic Data:**
+- `writeClassic` (Android only)
+
+**Bonding:**
+- `createBond`, `removeBond` (Android only)
+
+**Events:**
+- `onBluetoothEvent` - All Bluetooth events (stateChange, deviceDiscovered, connected, disconnected, notification, etc.)
+
+### Platform Differences
+
+| Feature | Android | iOS |
+|---------|---------|-----|
+| BLE | ✅ | ✅ |
+| Classic Bluetooth | ✅ | ❌ |
+| Manual Bonding | ✅ | ❌ |
+| Enable Bluetooth | ✅ | ❌ |
+| MTU Request | ✅ | Auto |

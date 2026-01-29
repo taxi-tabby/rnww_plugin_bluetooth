@@ -1,36 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-  <!-- 포그라운드 서비스 권한 -->
-  <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-  <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
 
-  <!-- 배터리 최적화 예외 요청 -->
-  <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    <!-- Bluetooth permissions for Android 12+ (API 31+) -->
+    <uses-permission android:name="android.permission.BLUETOOTH_SCAN" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <uses-permission android:name="android.permission.BLUETOOTH_ADVERTISE" />
 
-  <!-- 부팅 완료 시 재시작 -->
-  <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- Bluetooth permissions for Android 11 and below -->
+    <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />
 
-  <!-- 인터넷 (WebView용) -->
-  <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Location permission required for BLE scanning on Android 6-11 -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
 
-  <!-- 네트워크 상태 감지 -->
-  <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- Declare Bluetooth feature as optional -->
+    <uses-feature android:name="android.hardware.bluetooth" android:required="false" />
+    <uses-feature android:name="android.hardware.bluetooth_le" android:required="false" />
 
-  <application>
-    <!-- Foreground Service -->
-    <service
-      android:name="expo.modules.custombackground.BackgroundService"
-      android:enabled="true"
-      android:exported="false"
-      android:foregroundServiceType="dataSync" />
-
-    <!-- Boot Receiver for restart -->
-    <receiver
-      android:name="expo.modules.custombackground.BootReceiver"
-      android:enabled="true"
-      android:exported="true">
-      <intent-filter>
-        <action android:name="android.intent.action.BOOT_COMPLETED" />
-      </intent-filter>
-    </receiver>
-  </application>
 </manifest>
